@@ -1,70 +1,113 @@
 package br.com.colman.timelapser
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.bytedeco.javacv.FFmpegFrameGrabber
+import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.Java2DFrameConverter
+import org.slf4j.LoggerFactory
 import java.awt.image.BufferedImage
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.*
+import java.time.LocalDateTime
 import javax.imageio.ImageIO
-import kotlinx.coroutines.*
 
-object TimelapseService {
-    private val outputDir = File("frames")
-    private val converter = Java2DFrameConverter()
-    private var grabber: FFmpegFrameGrabber? = null
-    private var capturing = false
-    private var job: Job? = null
-    private var frameCount = 0
+private val logger = LoggerFactory.getLogger(TimelapseTaker::class.java)
 
-    fun start(rtspUrl: String) {
-        if (capturing) return
-        outputDir.mkdirs()
-        frameCount = 0
-        capturing = true
+class TimelapseTaker(
+  val rtspUrl: String,
+  val framesTempDirectory: File = File("frames"),
+  val outputDirectory: File = File("output"),
+  val intervalMillis: Long = 15_000L
+) {
+  private val converter = Java2DFrameConverter()
+  private var isCapturing = false
+  private var captureJob: Job? = null
+  private var frameCount = 0
 
-        job = CoroutineScope(Dispatchers.IO).launch {
-            grabber = FFmpegFrameGrabber(rtspUrl).apply {
-                start()
-            }
+  fun start() {
+    if (isCapturing) return logAlreadyCapturing()
 
-            while (capturing) {
-                val frame = grabber?.grabImage()
-                if (frame != null) {
-                    val img: BufferedImage = converter.convert(frame)
-                    val file = File(outputDir, "frame_${frameCount.toString().padStart(5, '0')}.jpg")
-                    ImageIO.write(img, "jpg", file)
-                    println("Saved: ${file.name}")
-                    frameCount++
-                } else {
-                    println("No frame captured.")
-                }
+    createDirectories()
 
-                delay(5000) // 5 seconds
-            }
+    startJob()
+  }
 
-            grabber?.stop()
-        }
+  private fun logAlreadyCapturing() = logger.warn("Already capturing. Ignoring.")
+
+  private fun createDirectories() {
+    framesTempDirectory.mkdirs()
+    outputDirectory.mkdirs()
+  }
+
+  private fun startJob() {
+    captureJob = CoroutineScope(Dispatchers.IO).launch {
+      while (isCapturing) {
+        val frame = captureFrame()
+        frame?.let { persistFrame(it) }
+        delay(intervalMillis)
+      }
     }
+  }
 
-    fun stop(): String {
-        capturing = false
-        runBlocking { job?.cancelAndJoin() }
+  private fun captureFrame(): BufferedImage? {
+    var frame: Frame? = null
+    runCatching {
+      FFmpegFrameGrabber(rtspUrl).use { grabber ->
+        grabber.start()
+        frame = grabber.grabImage()
+        grabber.stop()
+      }
+    }.onFailure { logger.error("Error while grabbing frame: ${it.message}") }
 
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
-        val output = "timelapse_$timestamp.mp4"
-
-        ProcessBuilder(
-            "ffmpeg",
-            "-framerate", "10",
-            "-pattern_type", "glob",
-            "-i", "${outputDir.absolutePath}/frame_*.jpg",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            output
-        ).inheritIO().start().waitFor()
-
-        outputDir.listFiles()?.forEach { it.delete() }
-        return output
+    if (frame == null) {
+      logger.warn("No frame captured.")
+      return null
     }
+    return converter.convert(frame)
+  }
+
+  private fun persistFrame(bufferedImage: BufferedImage) {
+    val file = File(outputDirectory, "frame_${frameCount.toString().padStart(5, '0')}.jpg")
+    ImageIO.write(bufferedImage, "jpg", file)
+    logger.info("Saved: ${file.name}")
+    frameCount++
+  }
+
+  fun stop() {
+    if (!isCapturing) {
+      logger.warn("Not capturing. Ignoring.")
+      return
+    }
+    stopJob()
+    buildVideoWithFfmpeg()
+    removeTemporaryFrames()
+  }
+
+  private fun stopJob() {
+    runBlocking { captureJob?.cancelAndJoin() }
+  }
+
+  private fun buildVideoWithFfmpeg() {
+    val datetime = LocalDateTime.now().toString()
+    val output = "timelapse_${datetime}.mp4"
+
+    ProcessBuilder(
+      "ffmpeg",
+      "-framerate", "10",
+      "-pattern_type", "glob",
+      "-i", "${outputDirectory.absolutePath}/frame_*.jpg",
+      "-c:v", "libx264",
+      "-pix_fmt", "yuv420p",
+      output
+    ).inheritIO().start().waitFor()
+  }
+
+  private fun removeTemporaryFrames() {
+    framesTempDirectory.listFiles()?.forEach { it.delete() }
+  }
 }
