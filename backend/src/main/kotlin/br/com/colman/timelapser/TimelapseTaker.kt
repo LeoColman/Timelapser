@@ -71,7 +71,7 @@ class TimelapseTaker(
   }
 
   private fun persistFrame(bufferedImage: BufferedImage) {
-    val file = File(outputDirectory, "frame_${frameCount.toString().padStart(5, '0')}.jpg")
+    val file = File(framesTempDirectory, "frame_${frameCount.toString().padStart(5, '0')}.jpg")
     ImageIO.write(bufferedImage, "jpg", file)
     logger.info("Saved: ${file.name}")
     frameCount++
@@ -94,20 +94,21 @@ class TimelapseTaker(
 
   private fun buildVideoWithFfmpeg() {
     val datetime = LocalDateTime.now().toString()
-    val output = "timelapse_${datetime}.mp4"
+    val output = File(outputDirectory,"timelapse_${datetime}.mp4")
 
     ProcessBuilder(
       "ffmpeg",
-      "-framerate", "10",
+      "-framerate", "30",
       "-pattern_type", "glob",
-      "-i", "${outputDirectory.absolutePath}/frame_*.jpg",
+      "-i", "${framesTempDirectory.absolutePath}/frame_*.jpg",
       "-c:v", "libx264",
       "-pix_fmt", "yuv420p",
-      output
+      output.absolutePath
     ).inheritIO().start().waitFor()
   }
 
   private fun removeTemporaryFrames() {
     framesTempDirectory.listFiles()?.forEach { it.delete() }
+    frameCount = 0
   }
 }
