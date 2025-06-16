@@ -8,7 +8,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.bytedeco.javacv.FFmpegFrameGrabber
-import org.bytedeco.javacv.Frame
 import org.bytedeco.javacv.Java2DFrameConverter
 import org.slf4j.LoggerFactory
 import java.awt.image.BufferedImage
@@ -25,7 +24,8 @@ class TimelapseTaker(
   val intervalMillis: Long = 15_000L
 ) {
   private val converter = Java2DFrameConverter()
-  private var isCapturing = false
+  var isCapturing = false
+    private set
   private var captureJob: Job? = null
   private var frameCount = 0
 
@@ -33,7 +33,6 @@ class TimelapseTaker(
     if (isCapturing) return logAlreadyCapturing()
 
     createDirectories()
-
     startJob()
   }
 
@@ -45,6 +44,7 @@ class TimelapseTaker(
   }
 
   private fun startJob() {
+    isCapturing = true
     captureJob = CoroutineScope(Dispatchers.IO).launch {
       while (isCapturing) {
         val frame = captureFrame()
@@ -55,20 +55,19 @@ class TimelapseTaker(
   }
 
   private fun captureFrame(): BufferedImage? {
-    var frame: Frame? = null
+    var frame: BufferedImage? = null
     runCatching {
       FFmpegFrameGrabber(rtspUrl).use { grabber ->
         grabber.start()
-        frame = grabber.grabImage()
+        frame = converter.convert(grabber.grabImage())
         grabber.stop()
       }
     }.onFailure { logger.error("Error while grabbing frame: ${it.message}") }
 
     if (frame == null) {
       logger.warn("No frame captured.")
-      return null
     }
-    return converter.convert(frame)
+    return frame
   }
 
   private fun persistFrame(bufferedImage: BufferedImage) {
@@ -83,6 +82,7 @@ class TimelapseTaker(
       logger.warn("Not capturing. Ignoring.")
       return
     }
+    isCapturing = false
     stopJob()
     buildVideoWithFfmpeg()
     removeTemporaryFrames()
