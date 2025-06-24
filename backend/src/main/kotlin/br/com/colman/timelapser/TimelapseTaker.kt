@@ -29,11 +29,17 @@ class TimelapseTaker(
   private var captureJob: Job? = null
   private var frameCount = 0
 
+
+  private var hlsProcess: Process? = null
+  private val hlsDir: File = File(outputDirectory, "hls")
+  private val hlsPlaylist get() = File(hlsDir, "stream.m3u8")
+
   fun start() {
     if (isCapturing) return logAlreadyCapturing()
 
     createDirectories()
-    startJob()
+    startTimelapseJob()
+    startLivestream()
   }
 
   private fun logAlreadyCapturing() = logger.warn("Already capturing. Ignoring.")
@@ -41,9 +47,10 @@ class TimelapseTaker(
   private fun createDirectories() {
     framesTempDirectory.mkdirs()
     outputDirectory.mkdirs()
+    hlsDir.mkdirs()
   }
 
-  private fun startJob() {
+  private fun startTimelapseJob() {
     isCapturing = true
     captureJob = CoroutineScope(Dispatchers.IO).launch {
       while (isCapturing) {
@@ -77,6 +84,38 @@ class TimelapseTaker(
     frameCount++
   }
 
+  private fun startLivestream() {
+    val cmd = listOf(
+      "ffmpeg",
+      "-fflags", "nobuffer", "-rtsp_transport", "tcp",
+      "-i", rtspUrl,
+      "-an",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-tune", "zerolatency",
+      "-r", 25.toString(),
+      "-f", "hls",
+      "-hls_time", 1.toString(),
+      "-hls_list_size", "5",
+      "-hls_flags", "delete_segments+append_list",
+      hlsPlaylist.absolutePath
+    )
+    hlsProcess = ProcessBuilder(cmd)
+      .redirectError(ProcessBuilder.Redirect.INHERIT)
+      .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+      .start()
+
+    logger.info("Started HLS stream at ${hlsPlaylist.absolutePath}")
+  }
+
+  private fun stopLiveStream() {
+    hlsProcess?.let {
+      logger.info("Stopping HLS ffmpeg (pid ${it.pid()})")
+      it.destroy()
+      it.waitFor()
+    }
+  }
+  
   fun stop() {
     if (!isCapturing) {
       logger.warn("Not capturing. Ignoring.")
@@ -98,7 +137,7 @@ class TimelapseTaker(
 
     ProcessBuilder(
       "ffmpeg",
-      "-framerate", "30",
+      "-framerate", "10",
       "-pattern_type", "glob",
       "-i", "${framesTempDirectory.absolutePath}/frame_*.jpg",
       "-c:v", "libx264",
