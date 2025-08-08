@@ -6,3 +6,8 @@ build/
 
 frames/
 *.mp4
+output/
+
+# Docker related
+.docker/
+docker-compose.override.yml

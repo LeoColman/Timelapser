@@ -3,4 +3,4 @@ plugins {
 }
 rootProject.name = "Timelapser"
 
-include(":backend", ":frontend")
+include(":backend")
