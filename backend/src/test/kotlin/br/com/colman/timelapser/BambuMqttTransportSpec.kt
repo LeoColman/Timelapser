@@ -5,17 +5,24 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import org.eclipse.paho.client.mqttv3.MqttClient
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import java.util.UUID
 
 class BambuMqttTransportSpec : FunSpec({
   val mosquitto = installMosquitto()
-  val broker by lazy { "tcp://${mosquitto.host}:${mosquitto.getMappedPort(1883)}" }
+  val broker = "tcp://${mosquitto.host}:${mosquitto.getMappedPort(1883)}"
 
   val serial = "SERIAL"
-  val target by lazy { BambuMqttTransport(broker, serial, "ACCESS_CODE") }
+  val accessCode = "ACCESS_CODE"
+  val target by lazy { BambuMqttTransport(BambuConfiguration(broker, serial, accessCode)) }
   
+  test("BambuMqttTransport uses the configured access code and username when connecting") {
+    String(target.connectOptions.password!!) shouldBe accessCode
+    target.connectOptions.userName shouldBe BambuMqttTransport.Username
+  }
+
   test("BambuMqttTransport emits a payload published to its report topic") {
-    val publisher = MqttClient(broker, UUID.randomUUID().toString())
+    val publisher = MqttClient(broker, UUID.randomUUID().toString(), MemoryPersistence())
     publisher.connect()
     val topic = "device/$serial/report"
     val payload = """{"print":{"subtask_name":"file.gcode"}}"""
