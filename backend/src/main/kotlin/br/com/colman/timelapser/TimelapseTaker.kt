@@ -9,13 +9,13 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
 import org.slf4j.LoggerFactory
 import java.awt.image.BufferedImage
 import java.io.File
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.imageio.ImageIO
 
@@ -52,8 +52,8 @@ class TimelapseTaker(
             start()
           }
           if (isCapturing && layer >= total) {
-            // Let the capture job handle the 5s delay and final capture, then it will request stop()
-            logger.info("Final layer reached ($layer/$total) – deferring stop until after final 5s capture")
+            // Let the capture job handle the 20s delay and final capture, then it will request stop()
+            logger.info("Final layer reached ($layer/$total) – deferring stop until after final 20s capture")
           }
         }
     }
@@ -74,12 +74,14 @@ class TimelapseTaker(
           if (layer < total) {
             captureFrame(layer)
           } else {
-            logger.info("Reached final layer $layer/$total – waiting 5s before capturing final frame…")
-            kotlinx.coroutines.delay(5000)
+            logger.info("Reached final layer $layer/$total – waiting 20s before capturing final frame…")
             if (isCapturing) {
-              captureFrame(layer)
-              logger.info("Final frame captured after 5s; stopping timelapse…")
-              scope.launch { stop() }
+              delay(20_000)
+              if (isCapturing) {
+                captureFrame(layer)
+                logger.info("Final frame captured; stopping timelapse…")
+                scope.launch { stop() }
+              }
             }
           }
         }

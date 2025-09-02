@@ -21,8 +21,8 @@ RUN ./gradlew --no-daemon backend:dependencies || true
 # Copy the backend sources
 COPY backend ./backend
 
-# Build an application distribution without running tests
-RUN ./gradlew --no-daemon backend:installDist -x test
+# Build an application distribution without running tests (force rebuild to avoid stale cache)
+RUN ./gradlew --no-daemon clean backend:installDist -x test --no-build-cache --rerun-tasks --refresh-dependencies
 
 # -------- Runtime stage --------
 FROM eclipse-temurin:20-jre
