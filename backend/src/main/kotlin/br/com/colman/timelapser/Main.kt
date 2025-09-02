@@ -6,9 +6,12 @@ fun main() {
     serial = "XXX",
     accessCode = "YYY",
   )
-  val timelapseTaker = TimelapseTaker(
-    "rtsp://thingino:thingino@192.168.0.3:554/ch0",
-    BambuMqttClient(transport)
+  val transport = BambuMqttTransport(config)
+  
+  val ffmpeg = FfmpegService("rtsp://thingino:thingino@192.168.15.100:554/ch0")
+  TimelapseTaker(
+    BambuMqttClient(transport),
+    ffmpeg
   )
 
   // Keep the JVM alive while coroutines and MQTT listeners run.
