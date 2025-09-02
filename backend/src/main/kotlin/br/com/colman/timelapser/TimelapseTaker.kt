@@ -61,6 +61,8 @@ class TimelapseTaker(
 
   fun start() {
     if(isCapturing) return
+    // Reset any previously cached preview frame to avoid stale frame 0 from a previous print
+    latestFrame = null
     isCapturing = true
     startPreviewGrabber()
     startTimelapseJob()
@@ -188,6 +190,8 @@ class TimelapseTaker(
   fun stop() {
     if (!isCapturing) return
     isCapturing = false
+    // Clear cached frame so next print won't reuse a stale image
+    latestFrame = null
     runBlocking { job.cancelAndJoin() }
     stopPreviewGrabber()
     buildVideoWithFfmpeg()
