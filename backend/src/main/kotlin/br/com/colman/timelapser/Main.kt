@@ -1,18 +1,17 @@
 package br.com.colman.timelapser
 
+import br.com.colman.timelapser.di.appModule
+import org.koin.core.context.startKoin
+import org.koin.logger.slf4jLogger
+
 fun main() {
-  val transport = BambuMqttTransport(
-    brokerUrl = "ssl://192.168.0.2:8883",
-    serial = "XXX",
-    accessCode = "YYY",
-  )
-  val transport = BambuMqttTransport(config)
-  
-  val ffmpeg = FfmpegService("rtsp://thingino:thingino@192.168.15.100:554/ch0")
-  TimelapseTaker(
-    BambuMqttClient(transport),
-    ffmpeg
-  )
+  val koin = startKoin {
+    slf4jLogger()
+    modules(appModule)
+  }.koin
+
+  // Resolve the main orchestrator (which wires and starts everything else)
+  koin.get<TimelapseTaker>()
 
   // Keep the JVM alive while coroutines and MQTT listeners run.
   while (true) {
